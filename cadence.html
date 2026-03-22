@@ -1717,7 +1717,10 @@ function toggleCreep() {
 function updateCreepDisplay() {
   const el = document.getElementById('creepDisplay');
   if (creepOn) {
-    el.textContent = `+2 BPM / bar  ·  target ∞`;
+    const barsLeft = CREEP_BARS - (_creepBarCount % CREEP_BARS);
+    el.textContent = metroRunning
+      ? `+2 BPM in ${barsLeft} bar${barsLeft===1?'':'s'}`
+      : `+2 BPM every ${CREEP_BARS} bars`;
     el.classList.add('active');
   } else {
     el.textContent = '';
@@ -1734,37 +1737,51 @@ function toggleMuteTrain() {
   document.getElementById('btnMute').classList.toggle('active-mode', muteTrainOn);
 }
 
+const CREEP_BARS = 20; // bars between each +2 BPM step
+let _creepBarCount = 0; // counts bars since last creep
+
 function startMetro() {
   const sig = TIME_SIGS[currentTimeSigIdx];
   metroBeat = 0;
-  const interval = (60/bpm)*1000;
-  metroTimer = setInterval(() => {
+  _creepBarCount = 0;
+
+  function tick() {
+    if (!metroRunning) return;
+
     const idx = metroBeat % sig.beats;
 
-    // creep: +2 BPM at the top of each bar (idx wraps back to 0)
-    if (creepOn && idx === 0 && metroBeat > 0) {
-      if (bpm < 220) {
-        setBpm(Math.min(bpm + 2, 220));
-        return; // setBpm restarts metro, this tick is superseded
+    // top of bar
+    if (idx === 0 && metroBeat > 0) {
+      _creepBarCount++;
+      if (creepOn && _creepBarCount >= CREEP_BARS && bpm < 220) {
+        _creepBarCount = 0;
+        bpm = Math.min(bpm + 2, 220);
+        // update UI silently — no metro restart
+        document.getElementById('bpmSlider').value = bpm;
+        document.getElementById('bpmInput').value  = bpm;
       }
+      if (creepOn) updateCreepDisplay();
     }
 
     const level = sig.accents.includes(idx) ? 2 : sig.accents2.includes(idx) ? 1 : 0;
-
-    // mute training: silence randomly but always show dot
     if (!muteTrainOn || Math.random() > MUTE_PROBABILITY) {
       playClick(level);
     }
 
     document.querySelectorAll('.beat-dot').forEach((d,i) => d.classList.toggle('active', i===idx));
+    const interval = (60 / bpm) * 1000;
     setTimeout(() => document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active')),
-      Math.min(interval*0.3, 110));
+      Math.min(interval * 0.3, 110));
+
     metroBeat++;
-  }, interval);
+    metroTimer = setTimeout(tick, interval);
+  }
+
+  metroTimer = setTimeout(tick, 0);
 }
 
 function stopMetro() {
-  clearInterval(metroTimer);
+  clearTimeout(metroTimer);
   document.querySelectorAll('.beat-dot').forEach(d=>d.classList.remove('active'));
 }
 
