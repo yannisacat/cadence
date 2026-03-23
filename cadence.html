@@ -1844,6 +1844,7 @@ function metroToggle() {
     stopMetro(); metroRunning = false;
     document.getElementById('metroBtnStart').textContent = 'Start';
     document.getElementById('metroBtnStart').classList.remove('counting');
+    if (!dmPlaying) document.getElementById('btnCreep').disabled = false;
   } else {
     // 3-2-1 countdown then start
     _metroCountingDown = true;
@@ -1870,6 +1871,17 @@ function metroToggle() {
         gsap.fromTo(btn, {scale: 0.85, opacity: 0.6}, {scale: 1, opacity: 1, duration: 0.2, ease: 'power2.out'});
         metroRunning = true;
         startMetro();
+        // If drum machine is playing, check BPM match
+        if (dmPlaying) {
+          if (bpm === Math.round(Tone.Transport.bpm.value)) {
+            if (creepOn) toggleCreep();
+            document.getElementById('btnCreep').disabled = true;
+          } else {
+            dmStop(); dmPlaying = false;
+            document.getElementById('drumPlayBtn').classList.remove('playing');
+            document.getElementById('drumPlayIcon').innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+          }
+        }
       }
     }, interval);
   }
@@ -2371,7 +2383,23 @@ document.getElementById('drumPlayBtn').addEventListener('click', () => {
     dmStop(); dmPlaying = false;
     document.getElementById('drumPlayBtn').classList.remove('playing');
     document.getElementById('drumPlayIcon').innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+    // Re-enable creep when drum stops
+    document.getElementById('btnCreep').disabled = false;
   } else {
+    const drumBpm = Math.round(Tone.Transport.bpm.value);
+    if (metroRunning) {
+      if (bpm === drumBpm) {
+        // Same BPM: co-play, but disable creep
+        if (creepOn) toggleCreep();
+        document.getElementById('btnCreep').disabled = true;
+      } else {
+        // Different BPM: stop metronome
+        _metroCountingDown = false;
+        stopMetro(); metroRunning = false;
+        document.getElementById('metroBtnStart').textContent = 'Start';
+        document.getElementById('metroBtnStart').classList.remove('counting');
+      }
+    }
     dmStart(); dmPlaying = true;
     document.getElementById('drumPlayBtn').classList.add('playing');
     document.getElementById('drumPlayIcon').innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
