@@ -14,12 +14,12 @@
   --s2:       #1a1a1a;
   --b0:       #1e1e1e;
   --b1:       #2a2a2a;
-  --t1:       #e2e2e2;
+  --t1:       #ededed;
   --t2:       #7a7a7a;
   --t3:       #3a3a3a;
   --red:      #c42020;
   --red-dim:  #5a0e0e;
-  --white:    #f2f2f2;
+  --white:    #ffffff;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -915,6 +915,14 @@ input[type=range]::-webkit-slider-thumb {
   border: 1px solid rgba(255,255,255,0.45); border-radius: 1px;
   box-sizing: border-box;
 }
+/* ── MOBILE: fit timer + metronome on one screen ── */
+@media (max-width: 480px) {
+  .card { padding: 14px 16px; }
+  .pomo-ring-wrap svg { width: 118px !important; height: 118px !important; }
+  .pomo-modes button { padding: 8px 6px 6px; }
+  .section-label { margin-bottom: 12px; }
+  .bpm-presets { gap: 0; }
+}
 </style>
 </head>
 <body>
@@ -1640,9 +1648,9 @@ function rotTomato(callback) {
 }
 
 function pomoFinished() {
-  addCheckin();
+  addPomo();
   showModal('🍅', 'Session Complete',
-    `${POMO_MODES[pomoMode].label} session done.\nA pick badge has been earned.`);
+    `${POMO_MODES[pomoMode].label} session done.\nA 32nd note badge earned.`);
   pomoLeft = pomoTotal;
   updatePomoDisplay();
 }
@@ -1993,10 +2001,23 @@ function playString(idx, freq) {
 // CHECKIN
 // ══════════════════════════════════════════
 // ── Note badge system ──
-// Each check-in adds 1 sixty-fourth note.
-// Every 4 notes of the same level merge into one note of the next level.
-// Levels: 0=64th 1=32nd 2=16th 3=8th 4=quarter 5=half 6=whole 7=double-whole
+// Each completed Pomodoro adds 1 thirty-second note.
+// 4×32nd = 16th, then 2-for-1 up: 2×16th=8th, 2×8th=quarter, 2×quarter=half, 2×half=whole, 2×whole=double-whole
+// Levels: 1=32nd 2=16th 3=8th 4=quarter 5=half 6=whole 7=double-whole
 const NOTE_LABELS = ['64th','32nd','16th','8th','quarter','half','whole','double-whole'];
+
+// Convert total pomodoros → array of {level, count} tokens
+function countToNotes(n) {
+  const thresholds = [128, 64, 32, 16, 8, 4, 1];
+  const levels     = [  7,  6,  5,  4,  3, 2, 1]; // 7=double-whole … 1=32nd
+  const tokens = [];
+  for (let i = 0; i < thresholds.length; i++) {
+    const cnt = Math.floor(n / thresholds[i]);
+    n -= cnt * thresholds[i];
+    if (cnt > 0) tokens.push({ level: levels[i], count: cnt });
+  }
+  return tokens;
+}
 
 // SVG for each note level (18×22 viewBox, currentColor)
 function noteSvg(level) {
@@ -2026,18 +2047,8 @@ function noteSvg(level) {
   }
 }
 
-// Convert flat check-in count → array of {level, count} tokens (big-endian)
-function countToNotes(n) {
-  // n raw sessions → decompose in base-4 across 8 levels
-  const tokens = [];
-  for (let lv = 7; lv >= 0; lv--) {
-    const unit = Math.pow(4, lv);
-    const cnt  = Math.floor(n / unit);
-    n -= cnt * unit;
-    if (cnt > 0) tokens.push({ level: lv, count: cnt });
-  }
-  return tokens; // e.g. 5 sessions → [{level:1,count:1},{level:0,count:1}]
-}
+// Convert total pomodoros → array of {level, count} tokens (big-endian)
+// (defined above — this duplicate removed)
 
 const PICKS = ['🎸','🎵','🎶','🎼','🥁','🎹','🎺','🎻','🪕','🎤'];
 
@@ -2056,6 +2067,43 @@ function addCheckin() {
   if (data.totalCheckins === 50) {
     setTimeout(() => showModal('🏆','Legend','50 sessions complete.\nYou are a true legend.'), 800);
   }
+}
+
+function addPomo() {
+  const data = loadData();
+  data.totalPomos = (data.totalPomos || 0) + 1;
+  saveData(data);
+  renderBadges(data.totalPomos);
+  if (data.totalPomos === 50) {
+    setTimeout(() => showModal('🏆','Legend','50 Pomodoros complete.\nYou are a true legend.'), 800);
+  }
+}
+
+function renderBadges(total) {
+  const c = document.getElementById('badgesContainer');
+  c.innerHTML = '';
+  const left = Math.max(50 - total, 0);
+  document.getElementById('progressFill').style.width = Math.min(total/50*100, 100) + '%';
+  document.getElementById('progressHint').textContent =
+    total >= 50 ? 'Legend status achieved' : `${left} pomodoros to legend`;
+  if (!total) {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:0.55rem;letter-spacing:0.15em;color:var(--t3);text-transform:uppercase;padding:4px 0';
+    hint.textContent = 'Complete a Pomodoro to earn badges';
+    c.appendChild(hint);
+    return;
+  }
+  const tokens = countToNotes(total);
+  tokens.forEach(tok => {
+    for (let i = 0; i < tok.count; i++) {
+      const div = document.createElement('div');
+      div.className = 'badge note-badge';
+      div.title = `${NOTE_LABELS[tok.level]} note`;
+      div.innerHTML = noteSvg(tok.level);
+      c.appendChild(div);
+    }
+  });
+  c.scrollTop = c.scrollHeight;
 }
 
 function manualCheckin() {
@@ -2078,31 +2126,8 @@ function renderCheckin(data) {
   document.getElementById('totalCount').textContent  = total;
   document.getElementById('streakCount').textContent = streak;
 
-  const left = Math.max(50-total,0);
-  document.getElementById('progressFill').style.width = Math.min(total/50*100,100)+'%';
-  document.getElementById('progressHint').textContent =
-    total>=50 ? 'Legend status achieved' : `${left} sessions to legend`;
-
-  // Render note badges
-  const c = document.getElementById('badgesContainer');
-  c.innerHTML = '';
-  const tokens = countToNotes(total);
-  tokens.forEach(tok => {
-    for (let i = 0; i < tok.count; i++) {
-      const div = document.createElement('div');
-      div.className = 'badge note-badge';
-      div.title = `${NOTE_LABELS[tok.level]} note`;
-      div.innerHTML = noteSvg(tok.level);
-      c.appendChild(div);
-    }
-  });
-  if (total === 0) {
-    const hint = document.createElement('div');
-    hint.style.cssText = 'font-size:0.55rem;letter-spacing:0.15em;color:var(--t3);text-transform:uppercase;padding:4px 0';
-    hint.textContent = 'Check in after each practice session';
-    c.appendChild(hint);
-  }
-  c.scrollTop = c.scrollHeight;
+  // Badges are driven by Pomodoro completions
+  renderBadges(data.totalPomos || 0);
 }
 
 function resetData() {
@@ -2696,9 +2721,9 @@ function startRunMetro() {
     getAudioCtx();
     playRunClick(b);
 
-    // count steps & check 1000-step milestone
+    // count steps & check 3000-step milestone
     _runStepCount++;
-    const milestone = Math.floor(_runStepCount / 1000);
+    const milestone = Math.floor(_runStepCount / 3000);
     if (milestone > _runLastMilestone) {
       _runLastMilestone = milestone;
       setTimeout(playMilestone1000, 80); // slight delay so beat click lands first
